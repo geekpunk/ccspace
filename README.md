@@ -25,7 +25,7 @@ Downloads the May 2017 snapshot of ccspace.org from the Wayback Machine and crea
 Copies the archive to a publish folder and makes editorial changes appropriate for a memorial/historical site.
 
 **Features:**
-- Copies `archive/` to `publish/` (preserves original)
+- Copies `archive/` to `docs/` (preserves original)
 - Removes PayPal donation links and buttons
 - Removes "eat" and "eats" header links
 - Changes "Charm City Art Space is" to "Charm City Art Space was"
@@ -33,7 +33,19 @@ Copies the archive to a publish folder and makes editorial changes appropriate f
 - Replaces donation text with closing message and link to [The Undercroft](https://theundercroft.org/)
 - Moves the last show event from current events to past events
 
-**Output:** `publish/` folder
+**Output:** `docs/` folder (configurable via `config.yaml`)
+
+### config.yaml
+
+Configuration file for the archive tools.
+
+```yaml
+# Source folder (downloaded archive)
+archive_dir: archive
+
+# Destination folder for published site
+publish_dir: docs
+```
 
 ## Usage
 
@@ -57,13 +69,14 @@ This creates the `archive/` folder with the downloaded site.
 python edit_archive.py
 ```
 
-This creates the `publish/` folder with the edited site ready for hosting.
+This creates the `docs/` folder with the edited site ready for hosting (compatible with GitHub Pages).
 
 ## Requirements
 
 - Python 3.10+
 - requests
 - beautifulsoup4
+- pyyaml
 
 ## Snapshot Source
 

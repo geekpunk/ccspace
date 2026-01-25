@@ -1,0 +1,7 @@
+# CCSpace Archive Configuration
+
+# Source folder (downloaded archive)
+archive_dir: archive
+
+# Destination folder for published site
+publish_dir: docs

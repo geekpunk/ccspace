@@ -12,11 +12,26 @@ Script to edit the downloaded archive site.
 import re
 import shutil
 from pathlib import Path
+
+import yaml
 from bs4 import BeautifulSoup
 
-# Configuration
-ARCHIVE_DIR = "archive"
-PUBLISH_DIR = "publish"
+# Load configuration
+CONFIG_FILE = "config.yaml"
+
+def load_config() -> dict:
+    """Load configuration from YAML file."""
+    config_path = Path(CONFIG_FILE)
+    if config_path.exists():
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f)
+    return {}
+
+config = load_config()
+
+# Configuration with defaults
+ARCHIVE_DIR = config.get('archive_dir', 'archive')
+PUBLISH_DIR = config.get('publish_dir', 'docs')
 
 
 def remove_paypal_links(soup: BeautifulSoup) -> int:

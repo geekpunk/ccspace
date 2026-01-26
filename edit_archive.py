@@ -3,12 +3,15 @@
 Script to edit the downloaded archive site.
 - Copies archive folder to publish folder
 - Removes PayPal donation links
-- Removes "eats" header links
+- Removes "eat"/"eats" header links
 - Changes "Charm City Art Space is" to "Charm City Art Space was"
+- Removes appreciation/donation request text
 - Replaces donation text with closing message and link to The Undercroft
 - Moves last show from current events to past events
+- Adds mobile responsive CSS
 """
 
+import os
 import re
 import shutil
 from pathlib import Path
@@ -19,6 +22,7 @@ from bs4 import BeautifulSoup
 # Load configuration
 CONFIG_FILE = "config.yaml"
 
+
 def load_config() -> dict:
     """Load configuration from YAML file."""
     config_path = Path(CONFIG_FILE)
@@ -27,54 +31,58 @@ def load_config() -> dict:
             return yaml.safe_load(f)
     return {}
 
-config = load_config()
 
-# Configuration with defaults
+config = load_config()
 ARCHIVE_DIR = config.get('archive_dir', 'archive')
 PUBLISH_DIR = config.get('publish_dir', 'docs')
 
+UNDERCROFT_HTML = (
+    'Charm City Art Space held its last show in November of 2015. '
+    'If you would like to contribute to a community arts space in Baltimore, '
+    'please consider <a href="https://theundercroft.org/">The Undercroft</a>.'
+)
+
+APPRECIATION_PATTERN = re.compile(
+    r"Anything you can give is appreciated\.?\s*We need your help to keep us going\.?",
+    re.IGNORECASE
+)
+
 
 def remove_paypal_links(soup: BeautifulSoup) -> int:
-    """Remove PayPal donation links and buttons."""
+    """Remove PayPal donation links, forms, images, and related elements."""
     removed = 0
 
-    # Remove links containing paypal in href
+    # Remove links and forms
     for element in soup.find_all('a', href=True):
         href = element['href'].lower()
         if 'paypal' in href or 'donate' in href:
             element.decompose()
             removed += 1
 
-    # Remove forms pointing to paypal
     for form in soup.find_all('form', action=True):
-        action = form['action'].lower()
-        if 'paypal' in action:
+        if 'paypal' in form['action'].lower():
             form.decompose()
             removed += 1
 
-    # Remove images with paypal in src or alt
+    # Remove PayPal images (and parent links)
     for img in soup.find_all('img'):
         src = (img.get('src') or '').lower()
         alt = (img.get('alt') or '').lower()
         if 'paypal' in src or 'paypal' in alt or 'donate' in alt:
-            # Check if it's inside a link, remove the link too
             parent = img.parent
-            if parent and parent.name == 'a':
-                parent.decompose()
-            else:
-                img.decompose()
+            (parent if parent and parent.name == 'a' else img).decompose()
             removed += 1
 
-    # Remove elements with paypal-related classes or ids
-    for element in soup.find_all(class_=re.compile(r'paypal|donate', re.IGNORECASE)):
-        element.decompose()
-        removed += 1
+    # Remove elements with paypal/donate classes or ids
+    for attr_search in [
+        {'class_': re.compile(r'paypal|donate', re.IGNORECASE)},
+        {'id': re.compile(r'paypal|donate', re.IGNORECASE)},
+    ]:
+        for element in soup.find_all(**attr_search):
+            element.decompose()
+            removed += 1
 
-    for element in soup.find_all(id=re.compile(r'paypal|donate', re.IGNORECASE)):
-        element.decompose()
-        removed += 1
-
-    # Remove any remaining elements containing "donate" text that look like buttons/links
+    # Remove remaining donate+paypal buttons/links
     for element in soup.find_all(['a', 'button', 'input']):
         text = element.get_text().lower()
         if 'donate' in text and 'paypal' in text:
@@ -85,186 +93,507 @@ def remove_paypal_links(soup: BeautifulSoup) -> int:
 
 
 def remove_eats_links(soup: BeautifulSoup) -> int:
-    """Remove 'eats' and 'eat' header links."""
+    """Remove 'eats' and 'eat' header links and their parent list items."""
     removed = 0
 
-    # Remove links with "eats" or "eat" in the text or href
+    # Find and remove links first, then clean up empty parent li's
     for element in soup.find_all('a'):
         text = element.get_text().lower().strip()
         href = (element.get('href') or '').lower()
 
         if text in ['eats', 'eat'] or 'eats' in href or '/eat' in href or 'eat.html' in href:
+            parent = element.parent
+            if parent and parent.name == 'li':
+                parent.decompose()
+            else:
+                element.decompose()
+            removed += 1
+
+    # Clean up any remaining bare li/span with just "eat"/"eats"
+    for element in soup.find_all(['li', 'span']):
+        if element.get_text().lower().strip() in ['eats', 'eat']:
             element.decompose()
             removed += 1
-
-    # Remove list items containing eats/eat links (common in navigation)
-    for li in soup.find_all('li'):
-        text = li.get_text().lower().strip()
-        if text in ['eats', 'eat']:
-            li.decompose()
-            removed += 1
-
-    # Remove nav items with eats/eat
-    for nav in soup.find_all(['nav', 'header', 'div']):
-        for child in nav.find_all(['a', 'span', 'li']):
-            text = child.get_text().lower().strip()
-            if text in ['eats', 'eat']:
-                # Try to remove parent li if exists
-                parent = child.parent
-                if parent and parent.name == 'li':
-                    parent.decompose()
-                else:
-                    child.decompose()
-                removed += 1
 
     return removed
 
 
-def replace_is_with_was(soup: BeautifulSoup) -> int:
-    """Replace 'Charm City Art Space is' with 'Charm City Art Space was'."""
-    replaced = 0
+def replace_text_patterns(soup: BeautifulSoup) -> tuple[int, int, int]:
+    """Handle all text replacements: is->was, appreciation removal, donation replacement.
+    Returns (is_was_count, appreciation_count, donation_count)."""
+    is_was = 0
+    appreciation = 0
+    donation = 0
 
-    # Find all text nodes and replace
+    # Replace "Charm City Art Space is" with "was"
     for text_node in soup.find_all(string=re.compile(r'Charm City Art Space is', re.IGNORECASE)):
         original = str(text_node)
-        # Handle different cases
         new_text = re.sub(r'Charm City Art Space is', 'Charm City Art Space was', original, flags=re.IGNORECASE)
         if new_text != original:
             text_node.replace_with(new_text)
-            replaced += original.lower().count('charm city art space is')
+            is_was += original.lower().count('charm city art space is')
 
-    return replaced
-
-
-def remove_appreciation_text(soup: BeautifulSoup) -> int:
-    """Remove 'Anything you can give is appreciated. We need your help to keep us going.' text."""
-    removed = 0
-
-    # Pattern to match
-    pattern = r"Anything you can give is appreciated\.?\s*We need your help to keep us going\.?"
-
-    # Find and remove text nodes containing this text
-    for text_node in soup.find_all(string=re.compile(pattern, re.IGNORECASE)):
+    # Remove appreciation text
+    for text_node in soup.find_all(string=APPRECIATION_PATTERN):
         original = str(text_node)
-        new_text = re.sub(pattern, '', original, flags=re.IGNORECASE).strip()
+        new_text = APPRECIATION_PATTERN.sub('', original).strip()
         if new_text != original:
             if new_text:
                 text_node.replace_with(new_text)
             else:
-                # If nothing left, remove the parent element if it's empty
                 parent = text_node.parent
                 text_node.extract()
                 if parent and not parent.get_text(strip=True):
                     parent.decompose()
-            removed += 1
+            appreciation += 1
 
-    return removed
-
-
-def replace_donation_text(soup: BeautifulSoup) -> int:
-    """Replace donation request text with closing message and Undercroft link."""
-    replaced = 0
-
-    # Text patterns to find (may be split across elements)
-    donation_patterns = [
-        r'Make a general donation to CCAS',
-        r'Anything you can give is appreciated',
-        r'We need your help to keep us going',
-    ]
-
-    # New replacement HTML
-    new_html = '''Charm City Art Space held its last show in November of 2015. If you would like to contribute to a community arts space in Baltimore, please consider <a href="https://theundercroft.org/">The Undercroft</a>.'''
-
-    # Find elements containing the donation text
+    # Replace donation request text with Undercroft message
     for element in soup.find_all(string=re.compile(r'Make a general donation to CCAS', re.IGNORECASE)):
-        # Get the parent element to replace the whole section
         parent = element.parent
-        if parent:
-            # Check if we can find the full donation text in this section
-            parent_text = parent.get_text()
-            if 'Make a general donation' in parent_text:
-                # Create new content
-                new_tag = BeautifulSoup(new_html, 'html.parser')
-                parent.clear()
-                parent.append(new_tag)
-                replaced += 1
-                continue
+        if parent and 'Make a general donation' in parent.get_text():
+            parent.clear()
+            parent.append(BeautifulSoup(UNDERCROFT_HTML, 'html.parser'))
+            donation += 1
 
-    # Also try to find and replace in container elements (like divs, p tags)
+    # Also check container elements
     for container in soup.find_all(['div', 'p', 'section', 'aside']):
         text = container.get_text()
         if 'Make a general donation to CCAS' in text and 'keep us going' in text:
-            # This container has the full donation text, replace it
-            new_tag = BeautifulSoup(f'<p>{new_html}</p>', 'html.parser')
             container.clear()
-            container.append(new_tag)
-            replaced += 1
+            container.append(BeautifulSoup(f'<p>{UNDERCROFT_HTML}</p>', 'html.parser'))
+            donation += 1
 
-    return replaced
+    return is_was, appreciation, donation
 
 
-def process_html_file(file_path: Path) -> tuple[int, int, int, int, int]:
-    """Process a single HTML file and return counts of removed/replaced elements."""
+def inject_hamburger_menu(soup: BeautifulSoup) -> bool:
+    """Inject hamburger menu button and toggle script for mobile."""
+    menu = soup.find(id='menu')
+    if not menu or soup.find(id='hamburger-btn'):
+        return False
+
+    header = soup.find(id='header')
+
+    # Create hamburger button
+    hamburger = soup.new_tag('button', id='hamburger-btn')
+    hamburger.attrs['aria-label'] = 'Menu'
+    hamburger.attrs['type'] = 'button'
+    hamburger.string = '\u2630'  # ☰
+
+    # Place inside header for absolute positioning, or before menu as fallback
+    if header:
+        header.append(hamburger)
+    else:
+        menu.insert_before(hamburger)
+
+    # Add toggle JavaScript
+    script = soup.new_tag('script')
+    script.string = """
+(function() {
+    var btn = document.getElementById('hamburger-btn');
+    var menu = document.getElementById('menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        menu.classList.toggle('menu-open');
+        btn.classList.toggle('active');
+    });
+    document.addEventListener('click', function(e) {
+        if (!menu.contains(e.target) && !btn.contains(e.target)) {
+            menu.classList.remove('menu-open');
+            btn.classList.remove('active');
+        }
+    });
+    var links = menu.getElementsByTagName('a');
+    for (var i = 0; i < links.length; i++) {
+        links[i].addEventListener('click', function() {
+            menu.classList.remove('menu-open');
+            btn.classList.remove('active');
+        });
+    }
+})();"""
+    body = soup.find('body')
+    if body:
+        body.append(script)
+    else:
+        soup.append(script)
+
+    return True
+
+
+def inject_mobile_banner(soup: BeautifulSoup) -> bool:
+    """Inject a mobile-only banner with the closing message right under the header."""
+    menu = soup.find(id='menu')
+    if not menu or soup.find(id='mobile-banner'):
+        return False
+
+    banner = soup.new_tag('div', id='mobile-banner')
+    banner.append(BeautifulSoup(UNDERCROFT_HTML, 'html.parser'))
+
+    # Insert after #menu so it appears between menu and content in the flex layout
+    menu.insert_after(banner)
+    return True
+
+
+def inject_responsive(soup: BeautifulSoup, css_relative_path: str) -> bool:
+    """Inject viewport meta tag and link to responsive CSS."""
+    head = soup.find('head')
+    if not head:
+        html_tag = soup.find('html')
+        if not html_tag:
+            return False
+        head = soup.new_tag('head')
+        html_tag.insert(0, head)
+
+    injected = False
+
+    if not soup.find('meta', attrs={'name': 'viewport'}):
+        viewport = soup.new_tag('meta')
+        viewport['name'] = 'viewport'
+        viewport['content'] = 'width=device-width, initial-scale=1.0'
+        head.insert(0, viewport)
+        injected = True
+
+    if not soup.find('link', href=re.compile(r'responsive\.css')):
+        link = soup.new_tag('link')
+        link['rel'] = 'stylesheet'
+        link['href'] = css_relative_path
+        head.append(link)
+        injected = True
+
+    return injected
+
+
+def process_html_file(file_path: Path, publish_path: Path) -> dict[str, int]:
+    """Process a single HTML file. Returns dict of change counts."""
+    counts = {'paypal': 0, 'eats': 0, 'is_was': 0, 'appreciation': 0, 'donation': 0, 'responsive': 0, 'hamburger': 0, 'banner': 0}
+
     try:
         html = file_path.read_text(encoding='utf-8')
     except UnicodeDecodeError:
         try:
             html = file_path.read_text(encoding='latin-1')
         except Exception:
-            return 0, 0, 0, 0, 0
+            return counts
 
     soup = BeautifulSoup(html, 'html.parser')
 
-    paypal_removed = remove_paypal_links(soup)
-    eats_removed = remove_eats_links(soup)
-    is_was_replaced = replace_is_with_was(soup)
-    appreciation_removed = remove_appreciation_text(soup)
-    donation_replaced = replace_donation_text(soup)
+    counts['paypal'] = remove_paypal_links(soup)
+    counts['eats'] = remove_eats_links(soup)
+    counts['is_was'], counts['appreciation'], counts['donation'] = replace_text_patterns(soup)
 
-    if paypal_removed > 0 or eats_removed > 0 or is_was_replaced > 0 or appreciation_removed > 0 or donation_replaced > 0:
+    css_relative_path = os.path.relpath(publish_path / 'responsive.css', file_path.parent)
+    if inject_responsive(soup, css_relative_path):
+        counts['responsive'] = 1
+
+    if inject_hamburger_menu(soup):
+        counts['hamburger'] = 1
+
+    if inject_mobile_banner(soup):
+        counts['banner'] = 1
+
+    if any(counts.values()):
         file_path.write_text(str(soup), encoding='utf-8')
 
-    return paypal_removed, eats_removed, is_was_replaced, appreciation_removed, donation_replaced
+    return counts
+
+
+def create_responsive_css(publish_path: Path) -> None:
+    """Create a responsive.css file in the publish directory."""
+    css = '''/* Hidden on desktop */
+#hamburger-btn {
+    display: none;
+}
+
+#mobile-banner {
+    display: none;
+}
+
+/* Mobile responsive overrides */
+@media screen and (max-width: 768px) {
+    /* Sticky header/footer layout using flexbox */
+    html, body {
+        overflow: hidden !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    body {
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+    }
+
+    #container {
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        overflow: hidden !important;
+        position: relative !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Sticky header */
+    #header {
+        flex-shrink: 0 !important;
+        position: relative !important;
+        width: 100% !important;
+        z-index: 100 !important;
+        height: auto !important;
+    }
+
+    #header img {
+        width: 100% !important;
+        height: auto !important;
+        display: block !important;
+    }
+
+    /* Hamburger button */
+    #hamburger-btn {
+        display: block !important;
+        position: absolute !important;
+        right: 10px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        z-index: 200 !important;
+        background: rgba(204, 102, 0, 0.9) !important;
+        color: white !important;
+        border: none !important;
+        font-size: 24px !important;
+        line-height: 1 !important;
+        padding: 6px 12px !important;
+        cursor: pointer !important;
+        border-radius: 4px !important;
+    }
+
+    #hamburger-btn.active {
+        background: rgba(153, 85, 0, 0.95) !important;
+    }
+
+    /* Menu - hidden by default, dropdown when hamburger is active */
+    #menu {
+        display: none !important;
+        flex-shrink: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        background: #CC6600 !important;
+        z-index: 99 !important;
+        box-sizing: border-box !important;
+    }
+
+    #menu.menu-open {
+        display: block !important;
+    }
+
+    #menu a {
+        display: block !important;
+        padding: 12px 20px !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
+        color: white !important;
+        text-decoration: none !important;
+        font-size: 16px !important;
+        width: auto !important;
+    }
+
+    #menu a:last-child {
+        border-bottom: none !important;
+    }
+
+    #menu a:hover,
+    #menu a:active {
+        background: #995500 !important;
+        text-decoration: none !important;
+    }
+
+    /* Mobile banner - closing message under header */
+    #mobile-banner {
+        display: block !important;
+        flex-shrink: 0 !important;
+        width: 100% !important;
+        background: #996600 !important;
+        color: white !important;
+        padding: 8px 15px !important;
+        font-size: 13px !important;
+        line-height: 1.4 !important;
+        text-align: center !important;
+        box-sizing: border-box !important;
+        z-index: 98 !important;
+    }
+
+    #mobile-banner a {
+        color: #FFD700 !important;
+        text-decoration: underline !important;
+    }
+
+    /* Scrollable content area */
+    #content {
+        flex: 1 1 auto !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+        padding: 10px !important;
+        box-sizing: border-box !important;
+        position: relative !important;
+    }
+
+    /* Main text area fluid */
+    .text {
+        width: 100% !important;
+        max-width: 100% !important;
+        position: static !important;
+        float: none !important;
+        display: block !important;
+        margin: 0 !important;
+        padding: 10px 5px !important;
+        box-sizing: border-box !important;
+        left: auto !important;
+        top: auto !important;
+    }
+
+    /* Hide sidebar on mobile - content is in the mobile banner */
+    #notes {
+        display: none !important;
+    }
+
+    /* Sticky footer */
+    #footer {
+        flex-shrink: 0 !important;
+        width: 100% !important;
+        z-index: 100 !important;
+        height: auto !important;
+    }
+
+    #footer img {
+        width: 100% !important;
+        height: auto !important;
+        display: block !important;
+    }
+
+    /* Tables */
+    table {
+        width: 100% !important;
+        max-width: 100% !important;
+        table-layout: auto !important;
+    }
+
+    td, th {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Responsive media */
+    img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    iframe, embed, object, video {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    /* Text overflow */
+    p, li, span, a, h1, h2, h3, h4, h5, h6, div {
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+    }
+
+    pre, code {
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+    }
+
+    /* Stack layouts vertically */
+    #sidebar, #left, #right,
+    .sidebar, .left, .right,
+    #leftcol, #rightcol, #maincol,
+    .leftcol, .rightcol, .maincol {
+        width: 100% !important;
+        float: none !important;
+        display: block !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+
+    /* Headings */
+    h1 { font-size: 1.6em !important; }
+    h2 { font-size: 1.4em !important; }
+    h3 { font-size: 1.2em !important; }
+
+    /* Hide spacer elements */
+    img[width="1"], img[height="1"],
+    td[width="1"], td[height="1"] {
+        display: none !important;
+    }
+
+    center { text-align: left !important; }
+}
+
+/* Small phones */
+@media screen and (max-width: 480px) {
+    body {
+        font-size: 14px !important;
+    }
+
+    #hamburger-btn {
+        font-size: 20px !important;
+        padding: 4px 10px !important;
+    }
+
+    #menu a {
+        padding: 10px 15px !important;
+        font-size: 14px !important;
+    }
+
+    h1 { font-size: 1.4em !important; }
+    h2 { font-size: 1.2em !important; }
+    h3 { font-size: 1.1em !important; }
+}
+'''
+    (publish_path / 'responsive.css').write_text(css, encoding='utf-8')
+    print("  Created responsive.css")
 
 
 def move_last_show_to_past_events(publish_path: Path) -> bool:
     """Move the last show event from current events to past events page."""
-
-    # The exact event content to find and move
     last_show_marker = "LAST SHOW AT 1731 MARYAND AVE"
     event_date = "Wednesday, November 11th, 7pm"
 
-    # Find current events and past events pages
     current_events_page = None
     past_events_page = None
 
+    # Single pass to find both pages
     for file_path in publish_path.rglob('*.html'):
         try:
             html = file_path.read_text(encoding='utf-8')
             name = file_path.name.lower()
 
-            if last_show_marker in html:
+            if last_show_marker in html and not current_events_page:
                 current_events_page = file_path
 
-            if 'past' in name and 'event' in name.replace('past', '').replace('.html', '') + html.lower()[:500]:
-                past_events_page = file_path
-            elif 'pastevents' in name or 'past_events' in name or 'past-events' in name:
+            if 'past' in name:
                 past_events_page = file_path
         except Exception:
             continue
 
-    # Search more specifically for past events
-    if not past_events_page:
-        for file_path in publish_path.rglob('*.html'):
-            name = file_path.name.lower()
-            if 'past' in name:
-                past_events_page = file_path
-                break
-
     if not current_events_page:
         print("  Could not find current events page with last show")
         return False
-
     if not past_events_page:
         print("  Could not find past events page")
         return False
@@ -272,39 +601,23 @@ def move_last_show_to_past_events(publish_path: Path) -> bool:
     print(f"  Current events page: {current_events_page.relative_to(publish_path)}")
     print(f"  Past events page: {past_events_page.relative_to(publish_path)}")
 
-    # Parse current events page
-    current_html = current_events_page.read_text(encoding='utf-8')
-    current_soup = BeautifulSoup(current_html, 'html.parser')
-
-    # Find just the event block - look for the smallest container with the event
+    # Parse and find the event block
+    current_soup = BeautifulSoup(current_events_page.read_text(encoding='utf-8'), 'html.parser')
     last_show_element = None
 
-    # Find the text node with the marker
     for text_node in current_soup.find_all(string=re.compile(last_show_marker, re.IGNORECASE)):
-        # Start from the text and find the event container
-        # Go up to find a reasonable event container (but not too far up)
         element = text_node.parent
-
-        # Keep track of the element and its depth
         candidate = None
         depth = 0
-        max_depth = 5  # Don't go more than 5 levels up
 
-        while element and depth < max_depth:
-            # Check if this looks like an event container
+        while element and depth < 5:
             element_text = element.get_text() if element.name else ''
-
-            # A good event container should have the date and artists but not be the whole page
             if event_date in element_text and 'Eze Jackson' in element_text:
-                # Check it's not too big (shouldn't contain navigation links to other pages)
-                if 'Past Events' not in element_text or element.name in ['p', 'div', 'li', 'article']:
-                    # Make sure it's a block element
-                    if element.name in ['div', 'p', 'li', 'article', 'section', 'tr', 'td']:
+                if element.name in ['div', 'p', 'li', 'article', 'section', 'tr', 'td']:
+                    if 'Past Events' not in element_text or element.name in ['p', 'li', 'tr']:
                         candidate = element
-                        # If it's a small element like p or li, this is probably it
                         if element.name in ['p', 'li', 'tr']:
                             break
-
             element = element.parent
             depth += 1
 
@@ -312,15 +625,13 @@ def move_last_show_to_past_events(publish_path: Path) -> bool:
             last_show_element = candidate
             break
 
+    # Fallback: search for smallest container
     if not last_show_element:
-        # Try alternative: look for a div/p containing just this event
         for element in current_soup.find_all(['div', 'p', 'li', 'article']):
             text = element.get_text()
             if last_show_marker in text and 'Eze Jackson' in text:
-                # Make sure this isn't the main content container
-                # Check that it doesn't contain navigation or too many other events
-                children_with_dates = len(element.find_all(string=re.compile(r'\d{1,2}(st|nd|rd|th),?\s*\d{1,2}')))
-                if children_with_dates <= 2:  # Allow for the one event
+                date_matches = len(element.find_all(string=re.compile(r'\d{1,2}(st|nd|rd|th),?\s*\d{1,2}')))
+                if date_matches <= 2:
                     last_show_element = element
                     break
 
@@ -328,51 +639,29 @@ def move_last_show_to_past_events(publish_path: Path) -> bool:
         print("  Could not find the last show event element")
         return False
 
-    # Extract the HTML before removing
     last_show_html = str(last_show_element)
-
-    # Remove from current events page
     last_show_element.decompose()
-
-    # Save the modified current events page
     current_events_page.write_text(str(current_soup), encoding='utf-8')
 
-    # Parse past events page and add the last show at the end
-    past_html = past_events_page.read_text(encoding='utf-8')
-    past_soup = BeautifulSoup(past_html, 'html.parser')
+    # Add to past events
+    past_soup = BeautifulSoup(past_events_page.read_text(encoding='utf-8'), 'html.parser')
 
-    # Find existing event entries to determine where to add
-    # Look for the last event entry or main content area
+    # Find content area with existing events
     content_area = None
-
-    # Try to find where other events are listed
-    for element in past_soup.find_all(['div', 'article', 'section', 'ul', 'main']):
-        # Look for elements that contain event-like content
-        text = element.get_text()
-        if re.search(r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)', text):
-            if element.name in ['div', 'article', 'section', 'main']:
-                content_area = element
-                break
-
-    # Fallback to main content areas
-    if not content_area:
-        content_area = past_soup.find('main') or \
-                      past_soup.find(class_=re.compile(r'content|events', re.IGNORECASE)) or \
-                      past_soup.find('article')
+    for element in past_soup.find_all(['div', 'article', 'section', 'main']):
+        if re.search(r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)', element.get_text()):
+            content_area = element
+            break
 
     if not content_area:
-        # Last resort: find body
-        content_area = past_soup.find('body')
+        content_area = (past_soup.find('main')
+                       or past_soup.find(class_=re.compile(r'content|events', re.IGNORECASE))
+                       or past_soup.find('article')
+                       or past_soup.find('body'))
 
     if content_area:
-        # Create the last show element and append
-        last_show_soup = BeautifulSoup(last_show_html, 'html.parser')
-
-        # Add a line break for separation
         content_area.append(BeautifulSoup('<br/>', 'html.parser'))
-        content_area.append(last_show_soup)
-
-        # Save the modified past events page
+        content_area.append(BeautifulSoup(last_show_html, 'html.parser'))
         past_events_page.write_text(str(past_soup), encoding='utf-8')
         print("  Successfully moved last show to past events")
         return True
@@ -394,45 +683,45 @@ def main():
     if publish_path.exists():
         print(f"  Removing existing {PUBLISH_DIR} folder...")
         shutil.rmtree(publish_path)
-
     shutil.copytree(archive_path, publish_path)
-    print(f"  Copied successfully!")
+    print("  Copied successfully!")
 
-    # Process HTML files in publish folder
+    # Create responsive CSS
+    print("\nCreating responsive CSS...")
+    create_responsive_css(publish_path)
+
+    # Process HTML files
     html_files = list(publish_path.rglob('*.html'))
     print(f"\nFound {len(html_files)} HTML files to process")
 
-    total_paypal = 0
-    total_eats = 0
-    total_is_was = 0
-    total_appreciation = 0
-    total_donation = 0
+    totals = {'paypal': 0, 'eats': 0, 'is_was': 0, 'appreciation': 0, 'donation': 0, 'responsive': 0, 'hamburger': 0, 'banner': 0}
     files_modified = 0
 
-    for file_path in html_files:
-        paypal, eats, is_was, appreciation, donation = process_html_file(file_path)
+    labels = {
+        'paypal': 'Removed {} PayPal element(s)',
+        'eats': 'Removed {} Eats element(s)',
+        'is_was': "Replaced {} 'is' -> 'was' occurrence(s)",
+        'appreciation': 'Removed {} appreciation text(s)',
+        'donation': 'Replaced {} donation text(s) with Undercroft message',
+        'responsive': 'Injected responsive CSS',
+        'hamburger': 'Injected hamburger menu',
+        'banner': 'Injected mobile banner',
+    }
 
-        if paypal > 0 or eats > 0 or is_was > 0 or appreciation > 0 or donation > 0:
+    for file_path in html_files:
+        counts = process_html_file(file_path, publish_path)
+
+        if any(counts.values()):
             files_modified += 1
             print(f"  Modified: {file_path.relative_to(publish_path)}")
-            if paypal > 0:
-                print(f"    - Removed {paypal} PayPal element(s)")
-            if eats > 0:
-                print(f"    - Removed {eats} Eats element(s)")
-            if is_was > 0:
-                print(f"    - Replaced {is_was} 'is' -> 'was' occurrence(s)")
-            if appreciation > 0:
-                print(f"    - Removed {appreciation} appreciation text(s)")
-            if donation > 0:
-                print(f"    - Replaced {donation} donation text(s) with Undercroft message")
+            for key, count in counts.items():
+                if count > 0:
+                    print(f"    - {labels[key].format(count)}")
 
-        total_paypal += paypal
-        total_eats += eats
-        total_is_was += is_was
-        total_appreciation += appreciation
-        total_donation += donation
+        for key in totals:
+            totals[key] += counts[key]
 
-    # Move last show from current events to past events
+    # Move last show
     print("\nMoving last show to past events...")
     last_show_moved = move_last_show_to_past_events(publish_path)
 
@@ -440,12 +729,9 @@ def main():
     print(f"Edit complete!")
     print(f"Output directory: {publish_path.absolute()}")
     print(f"Files modified: {files_modified}")
-    print(f"PayPal elements removed: {total_paypal}")
-    print(f"Eats elements removed: {total_eats}")
-    print(f"'is' -> 'was' replacements: {total_is_was}")
-    print(f"Appreciation text removed: {total_appreciation}")
-    print(f"Donation text replacements: {total_donation}")
-    print(f"Last show moved to past events: {'Yes' if last_show_moved else 'No'}")
+    for key, label in labels.items():
+        print(f"  {label.format(totals[key])}")
+    print(f"  Last show moved: {'Yes' if last_show_moved else 'No'}")
     print(f"{'='*50}")
 
 

@@ -1,5 +1,5 @@
 <html>
-<head>
+<head><meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>//CCAS V 2.0 \\</title>
 <meta content="text/html; charset=utf-8" http-equiv="Content-Type"/>
 <style type="text/css">
@@ -135,11 +135,11 @@ border-right:2px dotted #996600;*/
 }
 -->
 </style>
-</head>
+<link href="responsive.css" rel="stylesheet"/></head>
 <body style="background-color:#CC9900; margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px;">
 <div id="container">
-<div id="header"><img alt="" height="61" src="images/header.jpg" width="800"/></div>
-<div id="menu"><a href="index.html">home</a>   <a href="manifesto.html">manifesto</a>    <a href="events.html">events</a>  <a href="membership.html">membership</a>    <a href="booking.html">booking</a>   <a href="http://www.flickr.com/people/charmcityartspace/" target="_blank">photos</a>   <a href="directions.html">directions</a>   </div>
+<div id="header"><img alt="" height="61" src="images/header.jpg" width="800"/><button aria-label="Menu" id="hamburger-btn" type="button">☰</button></div>
+<div id="menu"><a href="index.html">home</a>   <a href="manifesto.html">manifesto</a>    <a href="events.html">events</a>  <a href="membership.html">membership</a>    <a href="booking.html">booking</a>   <a href="http://www.flickr.com/people/charmcityartspace/" target="_blank">photos</a>   <a href="directions.html">directions</a>   </div><div id="mobile-banner">Charm City Art Space held its last show in November of 2015. If you would like to contribute to a community arts space in Baltimore, please consider <a href="https://theundercroft.org/">The Undercroft</a>.</div>
 <div id="content">
 <div class="text">
 <div class="heading"><b>current gallery show:</b></div>
@@ -156,5 +156,28 @@ Kate Frese - <a href="mailto:kate@katefrese.com">kate@katefrese.com</a></p>
 <img alt="" height="31" src="images/footer.jpg" width="800"/>
 </div>
 </div>
-</body>
+<script>
+(function() {
+    var btn = document.getElementById('hamburger-btn');
+    var menu = document.getElementById('menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        menu.classList.toggle('menu-open');
+        btn.classList.toggle('active');
+    });
+    document.addEventListener('click', function(e) {
+        if (!menu.contains(e.target) && !btn.contains(e.target)) {
+            menu.classList.remove('menu-open');
+            btn.classList.remove('active');
+        }
+    });
+    var links = menu.getElementsByTagName('a');
+    for (var i = 0; i < links.length; i++) {
+        links[i].addEventListener('click', function() {
+            menu.classList.remove('menu-open');
+            btn.classList.remove('active');
+        });
+    }
+})();</script></body>
 </html>

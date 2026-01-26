@@ -32,6 +32,11 @@ Copies the archive to a publish folder and makes editorial changes appropriate f
 - Removes "Anything you can give is appreciated. We need your help to keep us going."
 - Replaces donation text with closing message and link to [The Undercroft](https://theundercroft.org/)
 - Moves the last show event from current events to past events
+- Adds mobile responsive CSS with:
+  - Hamburger menu (☰) replacing the horizontal nav on mobile
+  - Sticky header and footer with scrollable content in between
+  - Closing message banner displayed under the header on mobile
+  - Sidebar (`#notes`) hidden on mobile to avoid duplicate content
 
 **Output:** `docs/` folder (configurable via `config.yaml`)
 

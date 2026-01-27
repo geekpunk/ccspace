@@ -570,103 +570,91 @@ def create_responsive_css(publish_path: Path) -> None:
 
 
 def move_last_show_to_past_events(publish_path: Path) -> bool:
-    """Move the last show event from current events to past events page."""
+    """Move the last show from the events page to the past events page with correct show number.
+
+    Uses regex on raw HTML to avoid BeautifulSoup restructuring the malformed
+    nested <p> tags in events.html, which would merge the show paragraph with
+    the Gallery/Past Events links.
+    """
     last_show_marker = "LAST SHOW AT 1731 MARYAND AVE"
-    event_date = "Wednesday, November 11th, 7pm"
 
-    current_events_page = None
-    past_events_page = None
+    events_page = publish_path / 'events.html'
+    past_page = publish_path / 'past.html'
 
-    # Single pass to find both pages
-    for file_path in publish_path.rglob('*.html'):
-        try:
-            html = file_path.read_text(encoding='utf-8')
-            name = file_path.name.lower()
-
-            if last_show_marker in html and not current_events_page:
-                current_events_page = file_path
-
-            if 'past' in name:
-                past_events_page = file_path
-        except Exception:
-            continue
-
-    if not current_events_page:
-        print("  Could not find current events page with last show")
+    if not events_page.exists():
+        print("  Could not find events.html")
         return False
-    if not past_events_page:
-        print("  Could not find past events page")
+    if not past_page.exists():
+        print("  Could not find past.html")
         return False
 
-    print(f"  Current events page: {current_events_page.relative_to(publish_path)}")
-    print(f"  Past events page: {past_events_page.relative_to(publish_path)}")
-
-    # Parse and find the event block
-    current_soup = BeautifulSoup(current_events_page.read_text(encoding='utf-8'), 'html.parser')
-    last_show_element = None
-
-    for text_node in current_soup.find_all(string=re.compile(last_show_marker, re.IGNORECASE)):
-        element = text_node.parent
-        candidate = None
-        depth = 0
-
-        while element and depth < 5:
-            element_text = element.get_text() if element.name else ''
-            if event_date in element_text and 'Eze Jackson' in element_text:
-                if element.name in ['div', 'p', 'li', 'article', 'section', 'tr', 'td']:
-                    if 'Past Events' not in element_text or element.name in ['p', 'li', 'tr']:
-                        candidate = element
-                        if element.name in ['p', 'li', 'tr']:
-                            break
-            element = element.parent
-            depth += 1
-
-        if candidate:
-            last_show_element = candidate
-            break
-
-    # Fallback: search for smallest container
-    if not last_show_element:
-        for element in current_soup.find_all(['div', 'p', 'li', 'article']):
-            text = element.get_text()
-            if last_show_marker in text and 'Eze Jackson' in text:
-                date_matches = len(element.find_all(string=re.compile(r'\d{1,2}(st|nd|rd|th),?\s*\d{1,2}')))
-                if date_matches <= 2:
-                    last_show_element = element
-                    break
-
-    if not last_show_element:
-        print("  Could not find the last show event element")
+    # Remove the last show from events page using regex (not BS) to preserve
+    # surrounding HTML structure with malformed <p> nesting
+    events_html = events_page.read_text(encoding='utf-8')
+    if last_show_marker not in events_html:
+        print("  Last show not found on events page")
         return False
 
-    last_show_html = str(last_show_element)
-    last_show_element.decompose()
-    current_events_page.write_text(str(current_soup), encoding='utf-8')
+    show_pattern = re.compile(
+        r'<p[^>]*>\s*<b>\s*Wednesday,\s*November\s*11th.*?'
+        r'LAST SHOW AT 1731 MARYAND AVE.*?'
+        r'Jumbled\b.*?</p>',
+        re.DOTALL | re.IGNORECASE
+    )
 
-    # Add to past events
-    past_soup = BeautifulSoup(past_events_page.read_text(encoding='utf-8'), 'html.parser')
+    new_html = show_pattern.sub('', events_html, count=1)
+    if new_html != events_html:
+        events_page.write_text(new_html, encoding='utf-8')
+        print("  Removed last show from events.html")
+    else:
+        print("  Could not match last show pattern in events.html")
+        return False
 
-    # Find content area with existing events
-    content_area = None
-    for element in past_soup.find_all(['div', 'article', 'section', 'main']):
-        if re.search(r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)', element.get_text()):
-            content_area = element
-            break
-
-    if not content_area:
-        content_area = (past_soup.find('main')
-                       or past_soup.find(class_=re.compile(r'content|events', re.IGNORECASE))
-                       or past_soup.find('article')
-                       or past_soup.find('body'))
-
-    if content_area:
-        content_area.append(BeautifulSoup('<br/>', 'html.parser'))
-        content_area.append(BeautifulSoup(last_show_html, 'html.parser'))
-        past_events_page.write_text(str(past_soup), encoding='utf-8')
-        print("  Successfully moved last show to past events")
+    # Check if already on past events page
+    past_html = past_page.read_text(encoding='utf-8')
+    if last_show_marker in past_html:
+        print("  Last show already exists on past.html with correct numbering")
         return True
 
-    print("  Could not find content area in past events page")
+    # Find the last show number on the past events page
+    last_number = 0
+    for match in re.finditer(r'^(\d{1,4})\.', past_html, re.MULTILINE):
+        num = int(match.group(1))
+        if num > last_number:
+            last_number = num
+
+    next_number = last_number + 1
+
+    # Format in past events style (number, date without time, no contact info)
+    show_entry = (
+        f'<p>{next_number}. <b>Wednesday, November 11th</b><br>'
+        'LAST SHOW AT 1731 MARYAND AVE<br>'
+        'Eze Jackson<br>'
+        'Dylijens<br>'
+        'Cornelius the Third<br>'
+        'Kahlil Ali<br>'
+        'Jumbled</p>\n'
+    )
+
+    # Insert before the NOTICE paragraph or end of content div
+    notice_pos = past_html.find('NOTICE: DUE TO UNFORSEEN')
+    if notice_pos >= 0:
+        insert_pos = past_html.rfind('<p', 0, notice_pos)
+        if insert_pos >= 0:
+            past_html = past_html[:insert_pos] + show_entry + past_html[insert_pos:]
+            past_page.write_text(past_html, encoding='utf-8')
+            print(f"  Added last show as #{next_number} to past.html")
+            return True
+
+    # Fallback: insert before closing </div> of text area
+    text_div_end = past_html.find('</div>', past_html.rfind(str(last_number) + '.'))
+    if text_div_end >= 0:
+        past_html = past_html[:text_div_end] + show_entry + past_html[text_div_end:]
+        past_page.write_text(past_html, encoding='utf-8')
+        print(f"  Added last show as #{next_number} to past.html")
+        return True
+
+    print("  Could not find insertion point in past events page")
     return False
 
 

@@ -76,6 +76,36 @@ python edit_archive.py
 
 This creates the `docs/` folder with the edited site ready for hosting (compatible with GitHub Pages).
 
+## Testing
+
+The project includes a comprehensive test suite to ensure the accuracy of the archival and editing processes.
+
+### Running Tests
+
+1. Install test dependencies (included in `requirements.txt`):
+   ```bash
+   pip install pytest
+   ```
+
+2. Run the full test suite:
+   ```bash
+   pytest
+   ```
+
+### Test Coverage
+
+- **`test_archive_site.py`**: Validates the core archiving logic, including:
+  - URL cleaning and normalization
+  - WayBack Machine artifact removal
+  - PHP to HTML path conversion
+  - Asset extraction (CSS, images, JS)
+  
+- **`test_edit_archive.py`**: Verifies all editorial modifications:
+  - Removal of PayPal/donation elements
+  - Text replacements ("is" -> "was")
+  - Mobile responsiveness injection (hamburger menu, meta tags)
+  - Historical event moves (last show logic)
+
 ## Requirements
 
 - Python 3.10+

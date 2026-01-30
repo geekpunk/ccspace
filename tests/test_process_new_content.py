@@ -277,3 +277,55 @@ target_html: test.html
         # Check for warning
         captured = capsys.readouterr()
         assert "Warning: Element '#nonexistent' not found" in captured.out
+
+    def test_replace_existing_content(self, tmp_path):
+        """Test that content is replaced, not appended."""
+        # Create config
+        config_file = tmp_path / 'config.yaml'
+        config_file.write_text(f"""
+new_content_dir: {tmp_path / 'newContent'}
+publish_dir: {tmp_path / 'docs'}
+""")
+
+        # Create directories
+        new_content_dir = tmp_path / 'newContent'
+        new_content_dir.mkdir()
+        docs_dir = tmp_path / 'docs'
+        docs_dir.mkdir()
+
+        # Create target HTML file with existing content
+        target_html = docs_dir / 'test.html'
+        target_html.write_text("""
+<html>
+<body>
+    <div id="main">Old content that should be replaced</div>
+</body>
+</html>
+""")
+
+        # Create markdown file
+        md_file = new_content_dir / 'content.md'
+        md_file.write_text("""---
+target_html: test.html
+---
+
+<!-- block: element: #main -->
+# New Content
+This is the new content.
+""")
+
+        # Process
+        processor = NewContentProcessor(str(config_file))
+        processor.process_markdown_files()
+
+        # Verify replacement (not append)
+        result_html = target_html.read_text()
+        soup = BeautifulSoup(result_html, 'html.parser')
+        main_div = soup.select_one('#main')
+
+        assert main_div is not None
+        # Should have new content
+        assert 'New Content' in main_div.get_text()
+        assert 'new content' in main_div.get_text()
+        # Should NOT have old content
+        assert 'Old content that should be replaced' not in main_div.get_text()

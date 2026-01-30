@@ -189,13 +189,15 @@ class NewContentProcessor:
             # Create a new div to hold the injected content
             new_content = BeautifulSoup(block.html_content, 'html.parser')
 
-            # Insert the content into the target element
-            # You can choose to append, prepend, or replace
-            # Here we'll append the content
+            # Replace the content in the target element
+            # Clear existing content first
+            target_element.clear()
+
+            # Insert the new content
             for element in new_content:
                 target_element.append(element)
 
-            print(f"  Injected content into '{block.element_selector}'")
+            print(f"  Replaced content in '{block.element_selector}'")
 
         # Write the modified HTML back to the file
         target_html_path.write_text(str(soup), encoding='utf-8')

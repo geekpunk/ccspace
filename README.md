@@ -51,7 +51,7 @@ Processes markdown files from the `newContent/` folder and injects them into HTM
 - Converts markdown to HTML using the `markdown` library
 - Injects content into specific HTML elements using CSS selectors
 - Copies all images from `newContent/` to `docs/images/`
-- Preserves existing content (appends new content to target elements)
+- Replaces existing content in target elements with new content
 
 **Pre-configured Injection Points:**
 - `index.html` has `<div id="newContent"></div>` after the main blurb paragraph

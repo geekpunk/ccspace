@@ -5,3 +5,6 @@ archive_dir: archive
 
 # Destination folder for published site
 publish_dir: docs
+
+# New content folder (markdown files and images)
+new_content_dir: newContent

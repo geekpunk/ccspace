@@ -32,6 +32,7 @@ Copies the archive to a publish folder and makes editorial changes appropriate f
 - Removes "Anything you can give is appreciated. We need your help to keep us going."
 - Replaces donation text with closing message and link to [The Undercroft](https://theundercroft.org/)
 - Moves the last show event from current events to past events
+- Creates `<div id="newContent"></div>` injection points on index.html and events.html
 - Adds mobile responsive CSS with:
   - Hamburger menu (☰) replacing the horizontal nav on mobile
   - Sticky header and footer with scrollable content in between
@@ -39,6 +40,40 @@ Copies the archive to a publish folder and makes editorial changes appropriate f
   - Sidebar (`#notes`) hidden on mobile to avoid duplicate content
 
 **Output:** `docs/` folder (configurable via `config.yaml`)
+
+### process_new_content.py
+
+Processes markdown files from the `newContent/` folder and injects them into HTML files in the `docs/` folder. Also copies images from `newContent/` to `docs/images/`.
+
+**Features:**
+- Processes markdown files with YAML frontmatter
+- Supports multiple content blocks per file with HTML comment delimiters
+- Converts markdown to HTML using the `markdown` library
+- Injects content into specific HTML elements using CSS selectors
+- Copies all images from `newContent/` to `docs/images/`
+- Preserves existing content (appends new content to target elements)
+
+**Pre-configured Injection Points:**
+- `index.html` has `<div id="newContent"></div>` after the main blurb paragraph
+- `events.html` has `<div id="newContent"></div>` after the blurb paragraph
+- Target these with `#newContent` selector in your markdown files
+
+**Markdown File Format:**
+```markdown
+---
+target_html: index.html
+---
+
+<!-- block: element: #newContent -->
+# Your Content Here
+This will be inserted into the newContent div
+
+<!-- block: element: #notes -->
+## Additional Info
+This goes into the notes sidebar
+```
+
+**Output:** Updates existing HTML files in `docs/` folder and copies images
 
 ### config.yaml
 
@@ -50,6 +85,9 @@ archive_dir: archive
 
 # Destination folder for published site
 publish_dir: docs
+
+# New content folder (markdown files and images)
+new_content_dir: newContent
 ```
 
 ## Usage
@@ -75,6 +113,30 @@ python edit_archive.py
 ```
 
 This creates the `docs/` folder with the edited site ready for hosting (compatible with GitHub Pages).
+
+### 4. (Optional) Add new content
+
+Create markdown files in the `newContent/` folder to add dynamic content to the site:
+
+**Example:** `newContent/announcement.md`
+```markdown
+---
+target_html: index.html
+---
+
+<!-- block: element: #newContent -->
+# Important Announcement
+Your content here will appear on the index page
+```
+
+Then run:
+```bash
+python3 process_new_content.py
+```
+
+This processes markdown files from the `newContent/` folder and injects them into existing HTML files in the `docs/` folder. Images in `newContent/` (and subdirectories) are automatically copied to `docs/images/`.
+
+See `newContent/README.md` and `newContent/LOCATIONS.md` for complete documentation.
 
 ## Testing
 
@@ -105,6 +167,14 @@ The project includes a comprehensive test suite to ensure the accuracy of the ar
   - Text replacements ("is" -> "was")
   - Mobile responsiveness injection (hamburger menu, meta tags)
   - Historical event moves (last show logic)
+  - newContent div creation and placement
+
+- **`test_process_new_content.py`**: Tests the new content processing system:
+  - YAML frontmatter parsing
+  - Content block extraction with HTML comment delimiters
+  - Markdown to HTML conversion
+  - HTML injection into target elements
+  - Image copying functionality
 
 ## Requirements
 
@@ -112,11 +182,28 @@ The project includes a comprehensive test suite to ensure the accuracy of the ar
 - requests
 - beautifulsoup4
 - pyyaml
+- markdown (for `process_new_content.py`)
 
 ## Snapshot Source
 
 The archive is based on the Wayback Machine snapshot from May 9, 2017:
 https://web.archive.org/web/20170509211847/http://www.ccspace.org/
+
+## Dynamic Content Management
+
+The site supports dynamic content injection through markdown files:
+
+1. Create `.md` files in the `newContent/` folder
+2. Use YAML frontmatter to specify the target HTML file
+3. Use HTML comment delimiters to define content blocks with CSS selectors
+4. Run `python3 process_new_content.py` to inject content
+
+**Pre-configured injection points:**
+- `#newContent` on index.html (after main blurb)
+- `#newContent` on events.html (after blurb)
+- `#notes` on most pages (sidebar area)
+
+See `newContent/LOCATIONS.md` for detailed documentation.
 
 ## About Charm City Art Space
 

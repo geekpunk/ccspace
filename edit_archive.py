@@ -569,6 +569,52 @@ def create_responsive_css(publish_path: Path) -> None:
     print("  Created responsive.css")
 
 
+def add_content_divs(publish_path: Path) -> dict:
+    """Add div elements with id='newContent' at specific locations for content injection.
+
+    Returns dict with keys 'index' and 'events' indicating success.
+    """
+    results = {'index': False, 'events': False}
+
+    # 1. Add newContent div to index.html after the blurb paragraph
+    index_page = publish_path / 'index.html'
+    if index_page.exists():
+        html = index_page.read_text(encoding='utf-8')
+        blurb_marker = 'from all over to showcase their work in our fine city.<br/>\n</div>'
+
+        if blurb_marker in html:
+            # Check if newContent div already added at this location
+            if blurb_marker + '\n<div id="newContent"></div>' not in html:
+                # Insert the newContent div after the blurb div
+                html = html.replace(
+                    blurb_marker,
+                    blurb_marker + '\n<div id="newContent"></div>',
+                    1  # Only replace first occurrence
+                )
+                index_page.write_text(html, encoding='utf-8')
+                results['index'] = True
+
+    # 2. Add newContent div to events.html after the blurb paragraph
+    events_page = publish_path / 'events.html'
+    if events_page.exists():
+        html = events_page.read_text(encoding='utf-8')
+        blurb_marker = '<div class="blurb">CCAS is dedicated to promoting independent arts of all mediums in Baltimore City.  Click the link below to find out about  our  gallery schedule.</div>'
+
+        if blurb_marker in html:
+            # Check if newContent div already added at this location
+            if blurb_marker + '\n<div id="newContent"></div>' not in html:
+                # Insert the newContent div after the blurb div
+                html = html.replace(
+                    blurb_marker,
+                    blurb_marker + '\n<div id="newContent"></div>',
+                    1  # Only replace first occurrence
+                )
+                events_page.write_text(html, encoding='utf-8')
+                results['events'] = True
+
+    return results
+
+
 def move_last_show_to_past_events(publish_path: Path) -> bool:
     """Move the last show from the events page to the past events page with correct show number.
 
@@ -713,6 +759,14 @@ def main():
     print("\nMoving last show to past events...")
     last_show_moved = move_last_show_to_past_events(publish_path)
 
+    # Add newContent divs for dynamic content injection
+    print("\nAdding newContent divs...")
+    content_divs = add_content_divs(publish_path)
+    if content_divs['index']:
+        print("  Added newContent div to index.html")
+    if content_divs['events']:
+        print("  Added newContent div to events.html")
+
     print(f"\n{'='*50}")
     print(f"Edit complete!")
     print(f"Output directory: {publish_path.absolute()}")
@@ -720,6 +774,7 @@ def main():
     for key, label in labels.items():
         print(f"  {label.format(totals[key])}")
     print(f"  Last show moved: {'Yes' if last_show_moved else 'No'}")
+    print(f"  newContent divs added: {sum(content_divs.values())} of 2")
     print(f"{'='*50}")
 
 

@@ -850,3 +850,80 @@ class TestSamplePageIntegration:
         assert counts['responsive'] == 1
         assert counts['hamburger'] == 1
         assert counts['banner'] == 1
+
+# ---------------------------------------------------------------------------
+# TestAddContentDivs
+# ---------------------------------------------------------------------------
+
+class TestAddContentDivs:
+    """Tests for add_content_divs()."""
+
+    def test_adds_content_div_to_index(self, tmp_path):
+        """Test adding content div to index.html after blurb paragraph."""
+        index_file = tmp_path / 'index.html'
+        index_file.write_text(
+            '<html><body>'
+            '<div class="blurb">from all over to showcase their work in our fine city.<br/>\n</div>'
+            '<p>Other content</p>'
+            '</body></html>'
+        )
+
+        result = edit_archive.add_content_divs(tmp_path)
+
+        assert result['index'] is True
+        html = index_file.read_text()
+        assert '<div id="newContent"></div>' in html
+        assert html.index('<div id="newContent"></div>') > html.index('showcase their work')
+
+    def test_adds_content_div_to_events(self, tmp_path):
+        """Test adding content div to events.html after blurb paragraph."""
+        events_file = tmp_path / 'events.html'
+        events_file.write_text(
+            '<html><body>'
+            '<div class="blurb">CCAS is dedicated to promoting independent arts of all mediums in Baltimore City.  Click the link below to find out about  our  gallery schedule.</div>'
+            '<p>Other content</p>'
+            '</body></html>'
+        )
+
+        result = edit_archive.add_content_divs(tmp_path)
+
+        assert result['events'] is True
+        html = events_file.read_text()
+        assert '<div id="newContent"></div>' in html
+        assert html.index('<div id="newContent"></div>') > html.index('gallery schedule')
+
+    def test_does_not_add_duplicate_content_div(self, tmp_path):
+        """Test that newContent div is not added if already present at the location."""
+        index_file = tmp_path / 'index.html'
+        index_file.write_text(
+            '<html><body>'
+            '<div class="blurb">from all over to showcase their work in our fine city.<br/>\n</div>\n'
+            '<div id="newContent"></div>'
+            '<p>Other content</p>'
+            '</body></html>'
+        )
+
+        result = edit_archive.add_content_divs(tmp_path)
+
+        assert result['index'] is False
+        html = index_file.read_text()
+        # Should only have one occurrence of the div at this location
+        assert html.count('<div id="newContent"></div>') == 1
+
+    def test_handles_missing_files(self, tmp_path):
+        """Test that function handles missing files gracefully."""
+        result = edit_archive.add_content_divs(tmp_path)
+
+        assert result['index'] is False
+        assert result['events'] is False
+
+    def test_handles_missing_markers(self, tmp_path):
+        """Test that function handles missing marker text gracefully."""
+        index_file = tmp_path / 'index.html'
+        index_file.write_text('<html><body><p>No blurb paragraph here</p></body></html>')
+
+        result = edit_archive.add_content_divs(tmp_path)
+
+        assert result['index'] is False
+        html = index_file.read_text()
+        assert '<div id="newContent"></div>' not in html

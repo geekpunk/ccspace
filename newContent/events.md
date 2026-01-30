@@ -9,6 +9,6 @@ target_html: events.html
 
 more details to come
 
-[thanks to v is for vilonece for the image](https://www.instagram.com/v_is_for_violence/?hl=en)
+[thanks to v_is_for_violence for the art](https://www.instagram.com/v_is_for_violence/?hl=en)
 
 ** also fuck ice **

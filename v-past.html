@@ -497,7 +497,6 @@
       document.getElementById('stat-total-bands').textContent = allBands.length;
 
       renderTicks();
-      renderPie();
       render();
       lucide.createIcons();
     }
@@ -518,8 +517,20 @@
 
     function renderPie() {
       const container = document.getElementById('pie-chart-container');
-      const data = allBands.slice(0, 8);
+      const data = filteredBands.slice(0, 8);
       const total = data.reduce((a, c) => a + c.count, 0);
+
+      // Handle empty state
+      if (data.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-8">
+            <i data-lucide="pie-chart" class="w-10 h-10 text-neutral-700 mx-auto mb-4"></i>
+            <p class="text-neutral-500 text-sm">No data for current filter</p>
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
 
       let cumulativePercent = 0;
       const getCoords = (p) => [Math.cos(2 * Math.PI * p), Math.sin(2 * Math.PI * p)];
@@ -560,6 +571,9 @@
     }
 
     function render() {
+      // Update Pie Chart to reflect current filter
+      renderPie();
+
       // Update Range Highlight
       const highlight = document.getElementById('range-highlight');
       const left = ((range.min - 1) / (absoluteMax - 1)) * 100;

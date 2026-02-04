@@ -9,6 +9,7 @@ Script to edit the downloaded archive site.
 - Replaces donation text with closing message and link to The Undercroft
 - Moves last show from current events to past events
 - Adds mobile responsive CSS
+- Copies additional pages (showviz.html) to publish folder
 """
 
 import os
@@ -704,6 +705,24 @@ def move_last_show_to_past_events(publish_path: Path) -> bool:
     return False
 
 
+def copy_extra_pages(publish_path: Path) -> list:
+    """Copy additional pages from project root to publish directory.
+
+    Returns list of copied filenames.
+    """
+    extra_files = ['v-past.html']
+    copied = []
+
+    for filename in extra_files:
+        src = Path(filename)
+        if src.exists():
+            dst = publish_path / filename
+            shutil.copy2(src, dst)
+            copied.append(filename)
+
+    return copied
+
+
 def main():
     archive_path = Path(ARCHIVE_DIR)
     publish_path = Path(PUBLISH_DIR)
@@ -767,6 +786,14 @@ def main():
     if content_divs['events']:
         print("  Added newContent div to events.html")
 
+    # Copy extra pages (showviz.html, etc.)
+    print("\nCopying extra pages...")
+    extra_pages = copy_extra_pages(publish_path)
+    for page in extra_pages:
+        print(f"  Copied {page}")
+    if not extra_pages:
+        print("  No extra pages found to copy")
+
     print(f"\n{'='*50}")
     print(f"Edit complete!")
     print(f"Output directory: {publish_path.absolute()}")
@@ -775,6 +802,7 @@ def main():
         print(f"  {label.format(totals[key])}")
     print(f"  Last show moved: {'Yes' if last_show_moved else 'No'}")
     print(f"  newContent divs added: {sum(content_divs.values())} of 2")
+    print(f"  Extra pages copied: {len(extra_pages)}")
     print(f"{'='*50}")
 
 

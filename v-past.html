@@ -300,7 +300,7 @@
     let absoluteMax = 1;
 
     // Constants
-    const COLORS = ['#ea580c', '#f97316', '#fb923c', '#fdba74', '#fed7aa', '#ffedd5', '#7c2d12', '#431407'];
+    const COLORS = ['#fdba74', '#fcd34d', '#bef264', '#6ee7b7', '#67e8f9', '#a5b4fc', '#f0abfc', '#fda4af'];
 
     // Initial Load
     async function fetchData() {
@@ -434,9 +434,16 @@
       updateFilteredBands();
     }
 
-    function selectBand(bandName) {
+    function selectBand(bandName, pushState = true) {
       const band = allBands.find(b => b.name === bandName);
       if (!band) return;
+
+      // Update URL with band query parameter
+      if (pushState) {
+        const url = new URL(window.location);
+        url.searchParams.set('band', bandName);
+        history.pushState({ band: bandName }, '', url);
+      }
 
       document.getElementById('directory-view').classList.add('hidden');
       document.getElementById('detail-view').classList.remove('hidden');
@@ -481,7 +488,14 @@
       lucide.createIcons();
     }
 
-    function goBack() {
+    function goBack(pushState = true) {
+      // Update URL to remove band query parameter
+      if (pushState) {
+        const url = new URL(window.location);
+        url.searchParams.delete('band');
+        history.pushState({}, '', url);
+      }
+
       document.getElementById('directory-view').classList.remove('hidden');
       document.getElementById('detail-view').classList.add('hidden');
       document.getElementById('back-button').classList.add('hidden');
@@ -499,6 +513,9 @@
       renderTicks();
       render();
       lucide.createIcons();
+
+      // Check if URL has a band parameter to show
+      checkUrlForBand();
     }
 
     function renderTicks() {
@@ -535,39 +552,146 @@
       let cumulativePercent = 0;
       const getCoords = (p) => [Math.cos(2 * Math.PI * p), Math.sin(2 * Math.PI * p)];
 
-      const paths = data.map((slice, i) => {
-        const [sx, sy] = getCoords(cumulativePercent);
+      // Calculate midpoint angles for label positioning
+      const sliceData = data.map((slice, i) => {
+        const startPercent = cumulativePercent;
         const percent = slice.count / total;
         cumulativePercent += percent;
+        const [sx, sy] = getCoords(startPercent);
         const [ex, ey] = getCoords(cumulativePercent);
-        const large = percent > 0.5 ? 1 : 0;
+        const midPercent = startPercent + percent / 2;
+        const [mx, my] = getCoords(midPercent);
+        return { slice, i, sx, sy, ex, ey, mx, my, percent, large: percent > 0.5 ? 1 : 0 };
+      });
 
-        return `<path 
-                    d="M ${sx} ${sy} A 1 1 0 ${large} 1 ${ex} ${ey} L 0 0" 
-                    fill="${COLORS[i % COLORS.length]}" 
-                    class="cursor-pointer hover:opacity-80 transition-opacity" 
-                    onclick="selectBand('${slice.name.replace(/'/g, "\\'")}')"
-                ><title>${slice.name}: ${slice.count} shows</title></path>`;
+      const paths = sliceData.map(({ slice, i, sx, sy, ex, ey, large }) => {
+        return `<path
+                    data-index="${i}"
+                    d="M ${sx} ${sy} A 1 1 0 ${large} 1 ${ex} ${ey} L 0 0"
+                    fill="${COLORS[i % COLORS.length]}"
+                    stroke="#0a0a0a"
+                    stroke-width="0.02"
+                    class="pie-slice cursor-pointer transition-all duration-200"
+                ></path>`;
       }).join('');
 
-      const legend = data.map((slice, i) => `
-                <div class="flex items-center gap-3 cursor-pointer group" onclick="selectBand('${slice.name.replace(/'/g, "\\'")}')">
-                    <div class="w-4 h-4 rounded-sm" style="background-color: ${COLORS[i % COLORS.length]}"></div>
+      // Slice labels showing percentage and count
+      const sliceLabels = sliceData.map(({ slice, i, mx, my, percent }) => {
+        // Position label at 60% of radius for better placement
+        const labelX = mx * 0.65;
+        const labelY = my * 0.65;
+        const percentText = Math.round(percent * 100) + '%';
+        // Only show label if slice is big enough (> 5%)
+        if (percent < 0.05) return '';
+        // Use dark text for light palette
+        const textColor = '#1a1a1a';
+        return `<g class="pie-slice-label pointer-events-none" data-index="${i}" style="transform: rotate(90deg); transform-origin: center;">
+                    <text x="${labelX}" y="${labelY - 0.06}" text-anchor="middle" dominant-baseline="middle" fill="${textColor}" style="font-size: 0.12px; font-weight: bold;">${percentText}</text>
+                    <text x="${labelX}" y="${labelY + 0.06}" text-anchor="middle" dominant-baseline="middle" fill="${textColor}" style="font-size: 0.09px; opacity: 0.9;">${slice.count}</text>
+                </g>`;
+      }).join('');
+
+      // Center label for showing band name and count on hover
+      const centerLabelHtml = `
+        <g id="pie-center-label" class="opacity-0 transition-opacity duration-200 pointer-events-none" style="transform: rotate(90deg); transform-origin: center;">
+          <text x="0" y="-0.08" text-anchor="middle" dominant-baseline="middle" class="fill-white font-bold" style="font-size: 0.18px;" id="pie-center-name"></text>
+          <text x="0" y="0.12" text-anchor="middle" dominant-baseline="middle" class="fill-orange-500 font-mono" style="font-size: 0.14px;" id="pie-center-count"></text>
+        </g>`;
+
+      const legend = sliceData.map(({ slice, i }) => `
+                <div class="pie-legend-item flex items-center gap-3 cursor-pointer transition-opacity duration-200" data-index="${i}">
+                    <div class="w-4 h-4 rounded-sm transition-transform duration-200" style="background-color: ${COLORS[i % COLORS.length]}"></div>
                     <div class="flex flex-col">
-                        <span class="text-sm font-bold truncate max-w-[140px] group-hover:text-orange-500 transition-colors">${slice.name}</span>
+                        <span class="pie-legend-name text-sm font-bold truncate max-w-[140px] transition-colors duration-200">${slice.name}</span>
                         <span class="text-[10px] text-neutral-500 font-mono">${slice.count} shows (${Math.round(slice.count / total * 100)}%)</span>
                     </div>
                 </div>
             `).join('');
 
       container.innerHTML = `
-                <svg viewBox="-1.1 -1.1 2.2 2.2" class="w-48 h-48 md:w-64 md:h-64 -rotate-90 drop-shadow-2xl">
+                <svg id="pie-svg" viewBox="-1.1 -1.1 2.2 2.2" class="w-48 h-48 md:w-64 md:h-64 -rotate-90 drop-shadow-2xl">
                     ${paths}
+                    ${sliceLabels}
+                    ${centerLabelHtml}
                 </svg>
-                <div class="grid grid-cols-2 gap-x-8 gap-y-3">
+                <div id="pie-legend" class="grid grid-cols-2 gap-x-8 gap-y-3">
                     ${legend}
                 </div>
             `;
+
+      // Add event listeners for interactivity
+      const slices = container.querySelectorAll('.pie-slice');
+      const legendItems = container.querySelectorAll('.pie-legend-item');
+      const centerLabel = document.getElementById('pie-center-label');
+      const centerName = document.getElementById('pie-center-name');
+      const centerCount = document.getElementById('pie-center-count');
+
+      function highlightSlice(index) {
+        slices.forEach((s, i) => {
+          if (i === index) {
+            s.style.filter = 'brightness(1.3) drop-shadow(0 0 6px rgba(255, 255, 255, 0.4))';
+            s.style.strokeWidth = '0.04';
+            s.style.stroke = '#fff';
+          } else {
+            s.style.filter = 'brightness(0.5)';
+            s.style.strokeWidth = '0.02';
+            s.style.stroke = '#0a0a0a';
+          }
+        });
+        legendItems.forEach((l, i) => {
+          if (i === index) {
+            l.style.opacity = '1';
+            l.querySelector('.pie-legend-name').classList.add('text-orange-500');
+          } else {
+            l.style.opacity = '0.4';
+            l.querySelector('.pie-legend-name').classList.remove('text-orange-500');
+          }
+        });
+      }
+
+      function resetHighlight() {
+        slices.forEach(s => {
+          s.style.filter = 'none';
+          s.style.strokeWidth = '0.02';
+          s.style.stroke = '#0a0a0a';
+        });
+        legendItems.forEach(l => {
+          l.style.opacity = '1';
+          l.querySelector('.pie-legend-name').classList.remove('text-orange-500');
+        });
+        centerLabel.classList.add('opacity-0');
+        centerLabel.classList.remove('opacity-100');
+      }
+
+      function showCenterLabel(index) {
+        const item = data[index];
+        // Truncate long names for display
+        const displayName = item.name.length > 14 ? item.name.substring(0, 12) + '…' : item.name;
+        centerName.textContent = displayName;
+        centerCount.textContent = `${item.count} shows`;
+        centerLabel.classList.remove('opacity-0');
+        centerLabel.classList.add('opacity-100');
+      }
+
+      // Legend hover events
+      legendItems.forEach((item, i) => {
+        item.addEventListener('mouseenter', () => {
+          highlightSlice(i);
+          showCenterLabel(i);
+        });
+        item.addEventListener('mouseleave', resetHighlight);
+        item.addEventListener('click', () => selectBand(data[i].name));
+      });
+
+      // Slice hover and click events
+      slices.forEach((slice, i) => {
+        slice.addEventListener('mouseenter', () => {
+          highlightSlice(i);
+          showCenterLabel(i);
+        });
+        slice.addEventListener('mouseleave', resetHighlight);
+        slice.addEventListener('click', () => selectBand(data[i].name));
+      });
     }
 
     function render() {
@@ -643,6 +767,24 @@
       document.getElementById('max-slider').value = absoluteMax;
       document.getElementById('range-label').textContent = `Range: 1 — ${absoluteMax} Shows`;
       updateFilteredBands();
+    }
+
+    // Handle browser back/forward buttons
+    window.addEventListener('popstate', (event) => {
+      if (event.state && event.state.band) {
+        selectBand(event.state.band, false);
+      } else {
+        goBack(false);
+      }
+    });
+
+    // Check for band in URL on page load
+    function checkUrlForBand() {
+      const url = new URL(window.location);
+      const bandName = url.searchParams.get('band');
+      if (bandName) {
+        selectBand(bandName, false);
+      }
     }
 
     // Start App

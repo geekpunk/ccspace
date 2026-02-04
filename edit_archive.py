@@ -9,7 +9,8 @@ Script to edit the downloaded archive site.
 - Replaces donation text with closing message and link to The Undercroft
 - Moves last show from current events to past events
 - Adds mobile responsive CSS
-- Copies additional pages (showviz.html) to publish folder
+- Adds Archive Explorer menu item linking to v-past.html
+- Copies additional pages (v-past.html) to publish folder
 """
 
 import os
@@ -167,6 +168,24 @@ def replace_text_patterns(soup: BeautifulSoup) -> tuple[int, int, int]:
     return is_was, appreciation, donation
 
 
+def add_archive_explorer_link(soup: BeautifulSoup) -> bool:
+    """Add Archive Explorer menu item linking to v-past.html."""
+    menu = soup.find(id='menu')
+    if not menu:
+        return False
+
+    # Check if already added
+    for link in menu.find_all('a'):
+        if 'v-past.html' in (link.get('href') or ''):
+            return False
+
+    # Create new link
+    new_link = soup.new_tag('a', href='v-past.html')
+    new_link.string = 'archive explorer'
+    menu.append(new_link)
+    return True
+
+
 def inject_hamburger_menu(soup: BeautifulSoup) -> bool:
     """Inject hamburger menu button and toggle script for mobile."""
     menu = soup.find(id='menu')
@@ -267,7 +286,7 @@ def inject_responsive(soup: BeautifulSoup, css_relative_path: str) -> bool:
 
 def process_html_file(file_path: Path, publish_path: Path) -> dict[str, int]:
     """Process a single HTML file. Returns dict of change counts."""
-    counts = {'paypal': 0, 'eats': 0, 'is_was': 0, 'appreciation': 0, 'donation': 0, 'responsive': 0, 'hamburger': 0, 'banner': 0}
+    counts = {'paypal': 0, 'eats': 0, 'is_was': 0, 'appreciation': 0, 'donation': 0, 'responsive': 0, 'hamburger': 0, 'banner': 0, 'archive_link': 0}
 
     try:
         html = file_path.read_text(encoding='utf-8')
@@ -292,6 +311,9 @@ def process_html_file(file_path: Path, publish_path: Path) -> dict[str, int]:
 
     if inject_mobile_banner(soup):
         counts['banner'] = 1
+
+    if add_archive_explorer_link(soup):
+        counts['archive_link'] = 1
 
     if any(counts.values()):
         file_path.write_text(str(soup), encoding='utf-8')
@@ -747,7 +769,7 @@ def main():
     html_files = list(publish_path.rglob('*.html'))
     print(f"\nFound {len(html_files)} HTML files to process")
 
-    totals = {'paypal': 0, 'eats': 0, 'is_was': 0, 'appreciation': 0, 'donation': 0, 'responsive': 0, 'hamburger': 0, 'banner': 0}
+    totals = {'paypal': 0, 'eats': 0, 'is_was': 0, 'appreciation': 0, 'donation': 0, 'responsive': 0, 'hamburger': 0, 'banner': 0, 'archive_link': 0}
     files_modified = 0
 
     labels = {
@@ -759,6 +781,7 @@ def main():
         'responsive': 'Injected responsive CSS',
         'hamburger': 'Injected hamburger menu',
         'banner': 'Injected mobile banner',
+        'archive_link': 'Added Archive Explorer link',
     }
 
     for file_path in html_files:

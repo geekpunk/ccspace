@@ -38,8 +38,23 @@ Copies the archive to a publish folder and makes editorial changes appropriate f
   - Sticky header and footer with scrollable content in between
   - Closing message banner displayed under the header on mobile
   - Sidebar (`#notes`) hidden on mobile to avoid duplicate content
+- Adds "archive explorer" menu item linking to `v-past.html`
+- Copies `v-past.html` (Archive Explorer) to the publish folder
 
 **Output:** `docs/` folder (configurable via `config.yaml`)
+
+### v-past.html
+
+An interactive Archive Explorer page that provides a modern interface for browsing the CCAS show history.
+
+**Features:**
+- Fetches and parses show data from `past.html`
+- Displays statistics: total shows, unique bands, and timeline
+- Performance share pie chart showing top bands (updates with filter)
+- Filter slider to filter bands by number of appearances
+- Search functionality to find specific bands
+- Paginated band directory sorted by appearance count
+- Detailed band view showing all shows with full lineups
 
 ### process_new_content.py
 
